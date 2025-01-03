@@ -29,6 +29,7 @@ const (
 	FixedWindowType LimiterType = "FixedWindow" // 固定窗口限流器
 	SlideWindowType LimiterType = "SlideWindow" // 滑动窗口限流器
 	TokenBucketType LimiterType = "TokenBucket" // 令牌桶限流器
+	LeakyBucketType LimiterType = "LeakyBucket" // 漏桶限流器
 )
 
 // RateLimiter 定义限流器结构体
@@ -48,6 +49,7 @@ type Options struct {
 	TimeRange  int64 // [V] 时间窗口大小, 单位秒, 默认1秒  -- 参数传入
 	Expiration int64 // [-] Key 过期时间                -- 内部计算获得
 	InitTokens int64 // [-] 令牌桶初始Token数量
+	Capacity   int64 // [-] 令牌桶容量                  -- 参数传入
 }
 
 // NewRateLimiter 限流器实例化
@@ -96,7 +98,12 @@ func (r *RateLimiter) SetOptions(opt Options) *RateLimiter {
 			}
 		case TokenBucketType:
 			// Lua 脚本中根据 TimeRange 自动计算
-			// pass
+		case LeakyBucketType:
+			if opt.Expiration <= 3600 {
+				opt.Expiration = 3600
+			} else if opt.Expiration <= 14400 {
+				opt.Expiration = opt.TimeRange * 2
+			}
 		}
 	}
 
@@ -133,6 +140,8 @@ func (r *RateLimiter) Do() (ret int64, err error) {
 		ret, err = r.doSlideWindowLimiter()
 	case TokenBucketType:
 		ret, err = r.doTokenBucketLimiter()
+	case LeakyBucketType:
+		ret, err = r.doLeakyBucketLimiter()
 	}
 
 	return ret, err
@@ -220,18 +229,30 @@ func (r *RateLimiter) doTokenBucketLimiter() (int64, error) {
 	return cast.ToInt64(res), nil
 }
 
-// getScript 获取限流器执行脚本
-func (r *RateLimiter) getScript() (script string) {
-	switch r.limiterType {
-	case FixedWindowType:
-		script = FixedWindowScript
-	case SlideWindowType:
-		script = SlideWindowScript
-	case TokenBucketType:
-		script = TokenBucketScript
+// doLeakyBucketLimiter 执行漏桶限流
+func (r *RateLimiter) doLeakyBucketLimiter() (int64, error) {
+	options := []interface{}{
+		r.options.Capacity,   // 桶的容量
+		r.options.LimitCount, // 漏水速率, 单位是每秒漏多少个请求
+		r.currentTime / 1000, // 单位秒
+	}
+	res, err := EvalSha(r.ctx, r.client, r.getScriptSha(), []string{r.redisKey}, options...)
+
+	// 脚本缓存丢失时执行一次使用脚本重查
+	if err != nil && err.Error() == NoScriptMsg {
+		res, err = Eval(r.ctx, r.client, r.getScript(), []string{r.redisKey}, options...)
 	}
 
-	return script
+	if err != nil {
+		return 0, err
+	}
+
+	return cast.ToInt64(res), nil
+}
+
+// getScript 获取限流器执行脚本
+func (r *RateLimiter) getScript() (script string) {
+	return getLuaScript(r.limiterType, compressFlag)
 }
 
 // getScriptSha 获取限流器执行脚本Sha值
@@ -243,6 +264,8 @@ func (r *RateLimiter) getScriptSha() (sha1 string) {
 		sha1 = ScriptShas.SlideWindow
 	case TokenBucketType:
 		sha1 = ScriptShas.TokenBucket
+	case LeakyBucketType:
+		sha1 = ScriptShas.LeakyBucket
 	}
 
 	if sha1 == "" {
@@ -264,6 +287,8 @@ func (r *RateLimiter) genLimiterKey() string {
 	case SlideWindowType: // 固定KEY，无后缀
 		fallthrough
 	case TokenBucketType: // 固定KEY，无后缀
+		fallthrough
+	case LeakyBucketType: // 固定KEY，无后缀
 		fallthrough
 	default: // 执行默认拆KEY操作，防止热KEY场景
 		mod := 0

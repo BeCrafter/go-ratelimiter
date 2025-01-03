@@ -4,10 +4,18 @@
 
 package ratelimiter
 
-// Lua 脚本常量
-const (
+import (
+	"bufio"
+	"fmt"
+	"strings"
+)
+
+var luaScriptMap, luaScriptOptMap map[string]string
+
+func init() {
+	luaScriptMap = make(map[string]string, 4)
 	// 固定窗口限流脚本
-	FixedWindowScript = `
+	luaScriptMap["FixedWindowScript"] = `
 		--[[
 			Description: 基于 Reids String 实现, 可指定时间窗口作为限流周期
 
@@ -47,7 +55,7 @@ const (
 		return limit - current + 1
 	`
 	// 滑动窗口限流脚本
-	SlideWindowScript = `
+	luaScriptMap["SlideWindowScript"] = `
 		--[[
 			Description: 基于 Reids Hash 实现, 最小窗口限制为1s, 最大窗口限制为3600s
 						流量会在时间窗口基础上再拆分为更细粒度的窗口进行存储, 流量的放开会随着时间的滚动而逐步放开流量限制
@@ -101,7 +109,7 @@ const (
 		return result
 	`
 	// 令牌桶限流脚本
-	TokenBucketScript = `
+	luaScriptMap["TokenBucketScript"] = `
 		--[[
 			Description: 基于 Reids Hash 实现
 
@@ -193,4 +201,155 @@ const (
 
 		return tokensCount
 	`
-)
+	// 漏桶限流脚本
+	luaScriptMap["LeakyBucketScript"] = `
+		--[[
+			Description: 主要逻辑是判断当前请求是否可以被放入桶中，如果可以放入则可以执行本次请求，否则拒绝本次请求 - 基于 Redis Hash 实现
+			
+			漏桶算法的实现主要分为三个步骤：
+				1. 未满加水：通过代码 water += 1 进行不停加水的动作。
+				2. 漏桶漏水：通过时间差来计算漏水量
+				3. 剩余水量：总水量-漏水量
+
+			注解：
+				1. 当请求速率小于漏水速率时，几乎所有请求都会通过
+				2. 当请求速率大于漏水速率时，超出桶容量的请求会被拒绝
+				3. 即使在突发流量下，也能保证处理速率不超过漏水速率
+				4. 桶容量决定了系统能处理的突发流量大小
+
+			场景：
+				1. API 调用限制
+				2. 消息处理队列
+				3. 数据库写入限制
+
+			1. key        - [V] 漏桶 Key
+			2. capacity   - [V] 桶的容量
+			4. leakRate   - [V] 漏水速率, 单位是每秒漏多少个请求
+			4. curTime    - [V] 当前时间, 单位s
+		--]]
+
+		local key       = KEYS[1]
+		local capacity  = tonumber(ARGV[1])
+		local leakRate  = tonumber(ARGV[2])
+		local curTime   = tonumber(ARGV[3])
+
+		-- 参数校验
+		if not capacity or not leakRate or not curTime then
+			return 0
+		end
+
+		-- 获取桶中当前水量和上次漏水时间
+		local mresult = redis.call('HMGET', key, 'currentWater', 'lastLeakTime')
+		local currentWater = mresult[1]
+		local lastLeakTime = mresult[2]
+
+		-- 获取桶中水量
+		currentWater = tonumber(currentWater) or 0
+
+		-- 获取上次漏水时间
+		lastLeakTime = tonumber(lastLeakTime) or curTime
+
+		-- 计算距离上次漏水经过的时间
+		local elapsedTime = curTime - tonumber(lastLeakTime)
+
+		-- 漏水操作，更新桶中水量 (时间间隔 * 漏水速率 = 漏水水量)
+		local leakedWater = math.floor(elapsedTime * leakRate)
+
+		-- 计算桶中剩余水量, 并保证不小于0 (桶中水量 - 漏水水量 = 桶中剩余水量)
+		local newWater = math.max(0, tonumber(currentWater) - leakedWater)
+
+		-- 更新桶中水量和上次漏水时间
+		redis.call('HMSET', key, 'currentWater', newWater, 'lastLeakTime', curTime)
+
+		-- 定义返回结果 0 表示不允许, 1 表示允许
+		local result = 0
+
+		-- 判断是否允许请求通过
+		if newWater < capacity then
+			-- 这里是将当前返回的水量加1, 代表桶中水量增加了一个请求的量
+			local re = redis.call('HINCRBY', key, 'currentWater', 1)
+			result = 1
+		end
+
+		return result
+	`
+
+	// 将脚本注释去除，并折叠为一行
+	luaScriptOptMap = make(map[string]string, len(luaScriptMap))
+	for k, v := range luaScriptMap {
+		luaScriptOptMap[k] = compressCode(v)
+	}
+}
+
+func removeComments(code string) string {
+	var output strings.Builder
+	inMultilineComment := false
+
+	scanner := bufio.NewScanner(strings.NewReader(code))
+	for scanner.Scan() {
+		line := scanner.Text()
+		if inMultilineComment {
+			if strings.HasSuffix(line, "]]") {
+				inMultilineComment = false
+				line = strings.TrimSuffix(line, "]]")
+			}
+			continue
+		}
+
+		parts := strings.Split(line, "--[[")
+		if len(parts) > 1 {
+			output.WriteString(parts[0])
+			output.WriteString(strings.TrimSuffix(parts[1], "]]"))
+			inMultilineComment = true
+			continue
+		}
+
+		parts = strings.SplitN(line, "--", 2)
+		if len(parts) > 1 {
+			output.WriteString(parts[0])
+			continue
+		}
+
+		output.WriteString(line)
+	}
+
+	if err := scanner.Err(); err != nil {
+		fmt.Println("Error reading input:", err)
+	}
+
+	return output.String()
+}
+
+// compressCode compresss the Lua code into a single line
+func compressCode(code string) string {
+	code = removeComments(code)
+
+	for _, item := range []string{"\n", "\t", "     ", "    ", "   ", "  "} {
+		code = strings.ReplaceAll(code, item, " ")
+	}
+
+	return strings.TrimSpace(code)
+}
+
+// getLuaScript 根据限流类型获取对应的 Lua 脚本
+func getLuaScript(limitType LimiterType, flag bool) string {
+	var result string
+
+	luaScript := luaScriptMap
+	if flag {
+		luaScript = luaScriptOptMap
+	}
+
+	switch limitType {
+	case FixedWindowType:
+		result = luaScript["FixedWindowScript"]
+	case SlideWindowType:
+		result = luaScript["SlideWindowScript"]
+	case TokenBucketType:
+		result = luaScript["TokenBucketScript"]
+	case LeakyBucketType:
+		result = luaScript["LeakyBucketScript"]
+	}
+
+	return result
+}
