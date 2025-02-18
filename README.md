@@ -137,10 +137,7 @@ import (
 func Demo() {
     // 固定窗口限流
     obj := ratelimiter.NewRateLimiter("credit", ratelimiter.FixedWindowType)
-    rr, err := obj.WithOption(ratelimiter.Options{
-        LimitCount: int64(5), // 限流大小
-        TimeRange:  int64(2), // 窗口大小
-    }).Do()
+    rr, err := obj.WithOption(ratelimiter.NewFixedWindowOption()).Do()
 
     // 滑动窗口限流
     obj2 := ratelimiter.NewRateLimiter("credit", ratelimiter.SlideWindowType)
