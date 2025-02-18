@@ -137,28 +137,25 @@ import (
 func Demo() {
     // 固定窗口限流
     obj := ratelimiter.NewRateLimiter("credit", ratelimiter.FixedWindowType)
-    rr, err := obj.SetOptions(ratelimiter.Options{
-        LimitCount: int64(5), // 限流大小
-        TimeRange:  int64(2), // 窗口大小
-    }).Do()
+    rr, err := obj.WithOption(ratelimiter.NewFixedWindowOption()).Do()
 
     // 滑动窗口限流
     obj2 := ratelimiter.NewRateLimiter("credit", ratelimiter.SlideWindowType)
-    rr2, err2 := obj2.SetOptions(ratelimiter.Options{
+    rr2, err2 := obj2.WithOption(ratelimiter.Options{
         LimitCount: int64(5),  // 限流大小
         TimeRange:  int64(20), // 窗口大小（内部会基于窗口大小动态调整小窗口大小）
     }).Do()
 
     // 令牌桶限流
     obj3 := ratelimiter.NewRateLimiter("credit", ratelimiter.TokenBucketType)
-    rr3, err3 := obj3.SetOptions(ratelimiter.Options{
+    rr3, err3 := obj3.WithOption(ratelimiter.Options{
         LimitCount: int64(5),  // 最大令牌桶个数
         TimeRange:  int64(20), // 限流时间间隔(即: 令牌生成周期)
     }).Do()
 
     // 漏桶限流
     obj3 := ratelimiter.NewRateLimiter("credit", ratelimiter.LeakyBucketType)
-    rr3, err3 := obj3.SetOptions(ratelimiter.Options{
+    rr3, err3 := obj3.WithOption(ratelimiter.Options{
         Capacity:  int64(20),  // 桶的容量
         LimitCount: int64(5),  // 漏水速率, 单位是每秒漏多少个请求
     }).Do()
@@ -170,7 +167,7 @@ func Demo() {
 ```go
 func Demo() {
     obj := ratelimiter.NewRateLimiter("credit", ratelimiter.FixedWindowType)
-    rr, ok := obj.SetOptions(ratelimiter.Options{
+    rr, ok := obj.WithOption(ratelimiter.Options{
         LimitCount: int64(5), // 限流大小
         TimeRange:  int64(2), // 窗口大小
     }).Do()
