@@ -21,19 +21,19 @@ func init() {
 
 			1. key        - [V] 限流 key
 			2. limit      - [V] 限流大小
-			3. timeRange  - [-] 窗口大小, 默认窗口1s
+			3. unitTime   - [-] 窗口大小, 默认窗口1s
 			4. expiration - [-] Key的过期时间, 默认过期2s
 		--]]
 
 		local key       = KEYS[1]
 		local limit     = tonumber(ARGV[1])
-		local timeRange = 1
+		local unitTime = 1
 		if ARGV[2] ~= nil then
-			timeRange = tonumber(ARGV[2])
+			unitTime = tonumber(ARGV[2])
 		end
 
 		-- 设定过期周期(300~3600s)
-		local expiration  = math.ceil(timeRange * 2)
+		local expiration  = math.ceil(unitTime * 2)
 		if ARGV[3] ~= nil then
 			expiration = tonumber(ARGV[3])
 		end
@@ -63,23 +63,23 @@ func init() {
 			1. key        - [V] 限流 key
 			2. limitCount - [V] 单个时间窗口限制数量
 			3. curTime    - [V] 当前时间, 单位ms
-			4. timeRange  - [V] 时间窗口范围, 传参单位秒, 默认窗口1秒
+			4. unitTime   - [V] 时间窗口范围, 传参单位秒, 默认窗口1秒
 			5. expiration - [V] 集合key过期时间, 当key过期时会存在瞬时并发的情况, 因此过期时间不能太短或者改用定时清除
 		--]]
 
 		local key         = KEYS[1]
 		local limitCount  = tonumber(ARGV[1])
 		local curTime     = tonumber(ARGV[2])
-		local timeRange   = tonumber(ARGV[3]) * 1000
+		local unitTime    = tonumber(ARGV[3]) * 1000
 		local expiration  = tonumber(ARGV[4])
 		local newTime     = curTime
-		local diffVal     = timeRange
+		local diffVal     = unitTime
 		local constKeyCnt = 1000
 
-		if timeRange > 1000 then
-			local littleWin = math.ceil(timeRange / constKeyCnt)
+		if unitTime > 1000 then
+			local littleWin = math.ceil(unitTime / constKeyCnt)
 			newTime = math.floor(curTime / littleWin)
-			diffVal = math.floor(timeRange / littleWin)
+			diffVal = math.floor(unitTime / littleWin)
 		end
 
 		-- 已访问的次数
