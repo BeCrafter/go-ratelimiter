@@ -137,28 +137,19 @@ import (
 func Demo() {
     // 固定窗口限流
     obj := ratelimiter.NewRateLimiter("credit", ratelimiter.FixedWindowType)
-    rr, err := obj.WithOption(ratelimiter.NewFixedWindowOption()).Do()
+    rr, err := obj.WithOption(ratelimiter.NewFixedWindowOption(5, 1)).Do()
 
     // 滑动窗口限流
     obj2 := ratelimiter.NewRateLimiter("credit", ratelimiter.SlideWindowType)
-    rr2, err2 := obj2.WithOption(ratelimiter.Options{
-        LimitCount: int64(5),  // 限流大小
-        TimeRange:  int64(20), // 窗口大小（内部会基于窗口大小动态调整小窗口大小）
-    }).Do()
+    rr2, err2 := obj2.WithOption(ratelimiter.NewSlideWindowOption(5, 20)).Do()
 
     // 令牌桶限流
     obj3 := ratelimiter.NewRateLimiter("credit", ratelimiter.TokenBucketType)
-    rr3, err3 := obj3.WithOption(ratelimiter.Options{
-        LimitCount: int64(5),  // 最大令牌桶个数
-        TimeRange:  int64(20), // 限流时间间隔(即: 令牌生成周期)
-    }).Do()
+    rr3, err3 := obj3.WithOption(ratelimiter.NewTokenBucketOption(10, 20, 3)).Do()
 
     // 漏桶限流
     obj3 := ratelimiter.NewRateLimiter("credit", ratelimiter.LeakyBucketType)
-    rr3, err3 := obj3.WithOption(ratelimiter.Options{
-        Capacity:  int64(20),  // 桶的容量
-        LimitCount: int64(5),  // 漏水速率, 单位是每秒漏多少个请求
-    }).Do()
+    rr3, err3 := obj3.WithOption(ratelimiter.NewLeakyBucketOption(20, 5)).Do()
 }
 ```
 
@@ -167,10 +158,7 @@ func Demo() {
 ```go
 func Demo() {
     obj := ratelimiter.NewRateLimiter("credit", ratelimiter.FixedWindowType)
-    rr, ok := obj.WithOption(ratelimiter.Options{
-        LimitCount: int64(5), // 限流大小
-        TimeRange:  int64(2), // 窗口大小
-    }).Do()
+    rr, ok := obj.WithOption(ratelimiter.NewFixedWindowOption(5, 1)).Do()
     
     if err == nil && rr > 0 {
         // 请求可以继续执行
@@ -184,12 +172,12 @@ func Demo() {
 
 ## 一些注意项
 
-- 申请 Redis 集群时，版本需要在4.0以上;
+- 应用 Redis 集群时，版本需要在4.0以上;
 - Lua 脚本会被分配到写库上执行，故申请资源时需要重点关注写库性能;
 - Redis 集群注意项：
-  * Q-1: 性能集群单片写入QPS为10000，如果是lua脚本的话，是否是同样的QPS？
+  * Q-1: 性能集群单片写入 QPS 为10000，如果是 Lua 脚本的话，是否是同样的QPS？
   * A-1: 是的
-  * Q-2: 单Key的QPS承受不高，如何实现拆Key并将其打散到不同分片？
-  * A-2: Key 加后缀，会根据 hash 落在特定分片上，不同 Key 名的话，有可能落在同一个分片
-  * Q-3: 以Lua脚本进行限流场景下，建议选取什么样的集群架构？
-  * A-3: 申请高性能 Redis 集群，建议一主多从（使用 lua 的话，跨地域同步会有问题）
+  * Q-2: 单 Key 的 QPS 承受不高，如何实现拆 Key 并将其打散到不同分片？
+  * A-2: Key 加后缀，会根据 Hash Tag 落在特定分片上，不同 Key 的话，有可能落在同一个分片
+  * Q-3: 以 Lua 脚本进行限流场景下，建议选取什么样的集群架构？
+  * A-3: 申请高性能 Redis 集群，建议一主多从（使用 Lua 的话，跨地域同步会有问题）

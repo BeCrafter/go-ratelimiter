@@ -141,12 +141,7 @@ func TestLimiter_RedisKeyRandomSuffix(t *testing.T) {
 		t.Logf("LimitCount value[%v]", limit)
 		for i := 0; i < 10; i++ {
 			obj := NewRateLimiter("test", FixedWindowType)
-			obj1 := obj.WithOption(Options{
-				fixedWindowOptions: fixedWindowOptions{
-					LimitCount: limit,    // 限流大小
-					TimeRange:  int64(2), // 窗口大小
-				},
-			})
+			obj1 := obj.WithOption(NewFixedWindowOption(limit, 2))
 			key1 := obj1.GetRedisKey()
 			t.Logf("default index[%v] key[%v]", i, key1)
 		}
@@ -156,22 +151,13 @@ func TestLimiter_RedisKeyRandomSuffix(t *testing.T) {
 // go test . -v -run=TestLimiter_WithRedisKey
 func TestLimiter_WithRedisKey(t *testing.T) {
 	obj := NewRateLimiter("test", FixedWindowType)
-	obj1 := obj.WithOption(Options{
-		fixedWindowOptions: fixedWindowOptions{
-			LimitCount: int64(5), // 限流大小
-			TimeRange:  int64(2), // 窗口大小
-		},
-	})
+	obj1 := obj.WithOption(NewFixedWindowOption(5, 2))
 	key1 := obj1.GetRedisKey()
 	ret1, err1 := obj1.Do()
 	t.Logf("default key[%v] ret1[%v] err1[%v]", key1, ret1, err1)
 
-	obj2 := obj.WithOption(Options{
-		fixedWindowOptions: fixedWindowOptions{
-			LimitCount: int64(5), // 限流大小
-			TimeRange:  int64(2), // 窗口大小
-		},
-	}).WithRedisKey("test_test_123456789")
+	obj2 := obj.WithOption(NewFixedWindowOption(5, 2)).
+		WithRedisKey("test_test_123456789")
 	key2 := obj2.GetRedisKey()
 	ret2, err2 := obj2.Do()
 	t.Logf("custom key[%v] ret2[%v] err2[%v]", key2, ret2, err2)
@@ -405,8 +391,8 @@ func TestLimiter_LeakyBucketLimiter(t *testing.T) {
 func TestLeakyBucket(t *testing.T) {
 	tests := []struct {
 		name     string
-		capacity int
-		leakRate int
+		capacity int64
+		leakRate int64
 		requests int
 		interval time.Duration
 		want     int
@@ -435,12 +421,7 @@ func TestLeakyBucket(t *testing.T) {
 			passed := 0
 
 			for i := 0; i < tt.requests; i++ {
-				rr, err := obj.WithOption(Options{
-					leakyBucketOptions: leakyBucketOptions{
-						Capacity:   int64(tt.capacity),
-						LimitCount: int64(tt.leakRate),
-					},
-				}).Do()
+				rr, err := obj.WithOption(NewLeakyBucketOption(tt.capacity, tt.leakRate)).Do()
 
 				t.Logf("result: %v, err: %v", rr, err)
 				if rr > 0 {
