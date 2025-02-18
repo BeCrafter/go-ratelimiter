@@ -41,9 +41,10 @@ type RateLimiter struct {
 	redisKey    string          // [X] 存储Key                    -- 内部计算获得
 	currentTime int64           // [X] 当前时间, 单位毫秒           -- 程序内获取
 	options     Options         // [-] 限流器参数
+	optionFuncs []OptionFunc    // [-] 自定义拓展函数
 }
 
-// Options 限流器参数
+// Option 限流器参数
 type Options struct {
 	LimitCount int64 // [V] 限流大小                    -- 参数传入
 	TimeRange  int64 // [V] 时间窗口大小, 单位秒, 默认1秒  -- 参数传入
@@ -52,14 +53,17 @@ type Options struct {
 	Capacity   int64 // [-] 令牌桶容量                  -- 参数传入
 }
 
+type OptionFunc func(svr *RateLimiter)
+
 // NewRateLimiter 限流器实例化
-func NewRateLimiter(product string, limiterType LimiterType) *RateLimiter {
+func NewRateLimiter(product string, limiterType LimiterType, opts ...OptionFunc) *RateLimiter {
 	return &RateLimiter{
 		ctx:         context.TODO(),
 		product:     product,
 		client:      redisClient,
 		limiterType: limiterType,
 		currentTime: time.Now().UnixMilli(), // ms
+		optionFuncs: opts,
 	}
 }
 
@@ -69,8 +73,16 @@ func (r *RateLimiter) WithContext(ctx context.Context) *RateLimiter {
 	return r
 }
 
+// WithOptionFunc 自定义拓展函数设置
+func (r *RateLimiter) WithOptionFunc(ops ...OptionFunc) *RateLimiter {
+	if len(ops) > 0 {
+		r.optionFuncs = append(r.optionFuncs, ops...)
+	}
+	return r
+}
+
 // SetOptions 设置限流器参数
-func (r *RateLimiter) SetOptions(opt Options) *RateLimiter {
+func (r *RateLimiter) WithOption(opt Options) *RateLimiter {
 	if opt.LimitCount == 0 {
 		opt.LimitCount = 1
 	}
@@ -142,6 +154,11 @@ func (r *RateLimiter) Do() (ret int64, err error) {
 		ret, err = r.doTokenBucketLimiter()
 	case LeakyBucketType:
 		ret, err = r.doLeakyBucketLimiter()
+	}
+
+	// 执行自定义拓展函数
+	for _, fn := range r.optionFuncs {
+		fn(r)
 	}
 
 	return ret, err

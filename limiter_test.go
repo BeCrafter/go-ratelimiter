@@ -141,7 +141,7 @@ func TestLimiter_RedisKeyRandomSuffix(t *testing.T) {
 		t.Logf("LimitCount value[%v]", limit)
 		for i := 0; i < 10; i++ {
 			obj := NewRateLimiter("test", FixedWindowType)
-			obj1 := obj.SetOptions(Options{
+			obj1 := obj.WithOption(Options{
 				LimitCount: limit,    // 限流大小
 				TimeRange:  int64(2), // 窗口大小
 			})
@@ -154,7 +154,7 @@ func TestLimiter_RedisKeyRandomSuffix(t *testing.T) {
 // go test . -v -run=TestLimiter_SetRedisKey
 func TestLimiter_SetRedisKey(t *testing.T) {
 	obj := NewRateLimiter("test", FixedWindowType)
-	obj1 := obj.SetOptions(Options{
+	obj1 := obj.WithOption(Options{
 		LimitCount: int64(5), // 限流大小
 		TimeRange:  int64(2), // 窗口大小
 	})
@@ -162,7 +162,7 @@ func TestLimiter_SetRedisKey(t *testing.T) {
 	ret1, err1 := obj1.Do()
 	t.Logf("default key[%v] ret1[%v] err1[%v]", key1, ret1, err1)
 
-	obj2 := obj.SetOptions(Options{
+	obj2 := obj.WithOption(Options{
 		LimitCount: int64(5), // 限流大小
 		TimeRange:  int64(2), // 窗口大小
 	}).SetRedisKey("test_test_123456789")
@@ -429,7 +429,7 @@ func TestLeakyBucket(t *testing.T) {
 			passed := 0
 
 			for i := 0; i < tt.requests; i++ {
-				rr, err := obj.SetOptions(Options{
+				rr, err := obj.WithOption(Options{
 					Capacity:   int64(tt.capacity),
 					LimitCount: int64(tt.leakRate),
 				}).Do()
