@@ -7,9 +7,9 @@ NEXT_VERSION = $(shell echo $(VERSION) | awk -F. '{ printf "v%d.%d.%d", $$1, $$2
 tag:
 	@echo "Current version: $(VERSION)"
 	@echo "Next version: $(NEXT_VERSION)"
-	# @git tag $(NEXT_VERSION)
-	# @git push origin $(NEXT_VERSION)
-	# @echo "Successfully created and pushed tag $(NEXT_VERSION)"
+	@git tag $(NEXT_VERSION)
+	@git push origin $(NEXT_VERSION)
+	@echo "Successfully created and pushed tag $(NEXT_VERSION)"
 
 .PHONY: tag-delete
 tag-delete:
