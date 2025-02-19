@@ -6,6 +6,7 @@ package ratelimiter
 
 import (
 	"context"
+	"log"
 	"math"
 	"time"
 
@@ -71,7 +72,6 @@ type tokenBucketOptions struct {
 	maxTokens    int64 // [V] 令牌桶的上限                    -- 参数传入
 	initTokens   int64 // [V] 令牌桶初始Token数量              -- 参数传入
 	timeInterval int64 // [V] 桶生成时间间隔，单位秒，默认1秒    -- 参数传入
-	expiration   int64 // [-] Key 过期时间，单位秒             -- 内部计算获得
 }
 
 // leakyBucketOptions 漏桶限流器选项结构体
@@ -220,6 +220,23 @@ func (r *RateLimiter) GetRedisKey() string {
 
 // Do 执行限流器
 func (r *RateLimiter) Do() (ret int64, err error) {
+	defer func() {
+		record := LimiterRecord{
+			Type:      r.limiterType,
+			Key:       r.redisKey,
+			Result:    ret,
+			Timestamp: time.Now(),
+			Error:     err,
+		}
+		select {
+		case recordChan <- record:
+			// 成功发送到通道
+		default:
+			// 通道已满，记录丢弃事件
+			log.Printf("Warning: Record channel full, dropping record for key: %s", r.redisKey)
+		}
+	}()
+
 	if err := r.initOptions(r.options); err != nil {
 		return 0, err
 	}
