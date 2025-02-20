@@ -134,7 +134,17 @@ import (
     "github.com/BeCrafter/go-ratelimiter"
 )
 
+// 自定义限流记录处理器
+type LogHandler struct {}
+func (h *LogHandler) Handle(record ratelimiter.LimiterRecord) {
+	log.Printf("Limiter[%s] Key[%s] Result[%d] Error[%v]",
+		record.Type, record.Key, record.Result, record.Error)
+}
+
 func Demo() {
+    // 注册自定义限流记录处理器
+    ratelimiter.RegisterHandler("logger", &LogHandler{})
+
     // 固定窗口限流
     obj := ratelimiter.NewRateLimiter("credit", ratelimiter.FixedWindowType)
     rr, err := obj.WithOption(ratelimiter.NewFixedWindowOption(5, 1)).Do()
